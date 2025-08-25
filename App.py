@@ -13,17 +13,19 @@ import random
 
 import requests
 
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/115.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+})
+
 def loadPage(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/115.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Connection": "keep-alive"
-    }
-    time.sleep(random.uniform(1, 3))  # polite delay
-    res = requests.get(url, headers=headers)
+    # first touch the homepage to get cookies
+    session.get("https://www.tfrrs.org/")
+    time.sleep(random.uniform(1, 2))
+    res = session.get(url)
     res.raise_for_status()
     return res.text
 
