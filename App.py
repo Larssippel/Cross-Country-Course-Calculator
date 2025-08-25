@@ -11,19 +11,14 @@ import random
 # SCRAPING FUNCTIONS
 # ------------------------------
 
+import requests
+
 def loadPage(url):
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-
-    driver.get(url)
-    time.sleep(random.uniform(1, 3))
-
-    html = driver.page_source
-    driver.quit()
-    return html
+    headers = {"User-Agent": "Mozilla/5.0"}
+    time.sleep(random.uniform(1, 3))  # polite delay
+    res = requests.get(url, headers=headers)
+    res.raise_for_status()
+    return res.text
 
 
 def scrapeNames(meet_url):
