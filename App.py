@@ -35,7 +35,7 @@ def scrapeNames(meet_url):
     soup = BeautifulSoup(html, "html.parser")
     
     Athletes = []
-    print(html[:1000])
+    st.text_area("HTML Preview", html[:1000])
     tables = soup.find_all("table", class_="tablesaw tablesaw-xc table-striped table-bordered table-hover tablesaw-columntoggle")
     
     for table in tables:
