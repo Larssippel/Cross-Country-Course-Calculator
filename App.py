@@ -1,83 +1,92 @@
 import streamlit as st
 import pandas as pd
-#from selenium import webdriver
-#from selenium.webdriver.chrome.service import Service
-#from webdriver_manager.chrome import ChromeDriverManager
-from bs4 import BeautifulSoup
+import requests
 import time
 import random
+import re
+import json
 
 # ------------------------------
-# SCRAPING FUNCTIONS
+# HELPERS
 # ------------------------------
-
-import requests
-
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/115.0 Safari/537.36",
-    "Accept-Language": "en-US,en;q=0.9",
-})
 
 def loadPage(url):
-    # first touch the homepage to get cookies
-    session.get("https://www.tfrrs.org/")
-    time.sleep(random.uniform(1, 2))
-    res = session.get(url)
+    """Fetch a page politely with headers."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/115.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    time.sleep(random.uniform(1, 2))  # polite delay
+    res = requests.get(url, headers=headers)
     res.raise_for_status()
     return res.text
 
 
-def scrapeNames(meet_url):
-    html = loadPage(meet_url)
-    soup = BeautifulSoup(html, "html.parser")
-    
-    Athletes = []
-    st.text_area("HTML Preview", html[:1000])
-    tables = soup.find_all("table", class_="tablesaw tablesaw-xc table-striped table-bordered table-hover tablesaw-columntoggle")
-    
-    for table in tables:
-        header = table.find_previous("div", class_="custom-table-title custom-table-title-xc")
-        if not header:
-            continue
-
-        header_text = header.get_text(strip=True).lower()
-        if not header_text.startswith("men"):  # avoids catching "women"
-            continue
-
-        for row in table.find_all("tr")[1:]:
-            cols = row.find_all("td")
-            if len(cols) < 6:
-                continue
-
-            name = cols[1].get_text(strip=True)
-            team = cols[3].get_text(strip=True)
-            course_time = cols[5].get_text(strip=True)
-
-            if "trinity" in team.lower():
-                link_tag = cols[1].find("a")
-                profile_url = link_tag['href'] if link_tag else None
-
-                Athletes.append({
-                    "Name": name,
-                    "URL": profile_url,
-                    "AvgTime": None,
-                    "CourseTime": course_time
-                })
-
-    return Athletes
+def extract_initial_state(html):
+    """Extract and parse the window.INITIAL_STATE JSON from a TFRRS page."""
+    match = re.search(r"window\.INITIAL_STATE\s*=\s*({.*});", html, re.DOTALL)
+    if not match:
+        return None
+    data_str = match.group(1)
+    try:
+        return json.loads(data_str)
+    except Exception as e:
+        print("JSON parse error:", e)
+        return None
 
 
 def timeToSeconds(time_string):
     try:
-        if ":" not in time_string:
+        if not time_string or ":" not in time_string:
             return None
         minutes, secMs = time_string.split(":")
         return int(minutes) * 60 + float(secMs)
     except ValueError:
         return None
+
+
+# ------------------------------
+# SCRAPERS
+# ------------------------------
+
+def scrapeNames(meet_url):
+    html = loadPage(meet_url)
+    state = extract_initial_state(html)
+    Athletes = []
+
+    if not state:
+        st.error("Could not find INITIAL_STATE JSON on meet page")
+        return Athletes
+
+    # Explore JSON to see structure
+    # st.json(state)   # uncomment if you want to inspect full JSON
+
+    races = state.get("races", [])
+    for race in races:
+        gender = race.get("gender", "").lower()
+        if gender != "men":   # skip women
+            continue
+
+        results = race.get("results", [])
+        for runner in results:
+            team = runner.get("team_name", "")
+            if "trinity" not in team.lower():
+                continue
+
+            name = runner.get("full_name", "")
+            profile_url = runner.get("athlete_url", None)
+            course_time = runner.get("mark", None)
+
+            Athletes.append({
+                "Name": name,
+                "URL": profile_url,
+                "AvgTime": None,
+                "CourseTime": course_time
+            })
+
+    return Athletes
 
 
 def scrapeAvgTimes(Athletes):
@@ -86,24 +95,21 @@ def scrapeAvgTimes(Athletes):
             continue
 
         html = loadPage(row['URL'])
-        soup = BeautifulSoup(html, "html.parser")
+        state = extract_initial_state(html)
+        if not state:
+            continue
 
         all_times = []
-
-        tables = soup.find_all("table", class_="table table-hover xc")
-        for table in tables:
-            for race_row in table.find_all("tr"):
-                cols = race_row.find_all("td")
-                if len(cols) < 2:
-                    continue
-
-                distance = cols[0].get_text(strip=True).lower()
-                race_time = cols[1].get_text(strip=True)
-
-                if distance == "8k":
-                    t = timeToSeconds(race_time)
-                    if t is not None:
-                        all_times.append(t)
+        races = state.get("races", [])
+        for race in races:
+            dist = race.get("distance_name", "").lower()
+            mark = race.get("mark", None)
+            if not dist or not mark:
+                continue
+            if dist == "8k":
+                t = timeToSeconds(mark)
+                if t is not None:
+                    all_times.append(t)
 
         if all_times:
             avg_sec = sum(all_times) / len(all_times)
@@ -138,7 +144,8 @@ def computeTeamDiff(Athletes):
 # ------------------------------
 
 st.title("🏃 Trinity XC TFRRS Scraper")
-st.write("Paste a TFRRS meet URL below to scrape results for Trinity athletes, calculate average times, and compare course vs. average performance.")
+st.write("Paste a TFRRS meet URL below to scrape results for Trinity athletes, "
+         "calculate average times, and compare course vs. average performance.")
 
 meet_url = st.text_input("Enter TFRRS Meet URL:")
 
@@ -148,9 +155,12 @@ if meet_url:
         athletes = scrapeAvgTimes(athletes)
         team_diff = computeTeamDiff(athletes)
 
-    df = pd.DataFrame(athletes)
-    st.subheader("Athlete Data")
-    st.dataframe(df)
+    if athletes:
+        df = pd.DataFrame(athletes)
+        st.subheader("Athlete Data")
+        st.dataframe(df)
+    else:
+        st.warning("No Trinity men's athletes found for this meet.")
 
     if team_diff is not None:
         st.subheader("📊 Team Average Difference")
