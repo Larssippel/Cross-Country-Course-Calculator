@@ -14,7 +14,14 @@ import random
 import requests
 
 def loadPage(url):
-    headers = {"User-Agent": "Mozilla/5.0"}
+     headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/115.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Connection": "keep-alive"
+    }
     time.sleep(random.uniform(1, 3))  # polite delay
     res = requests.get(url, headers=headers)
     res.raise_for_status()
@@ -24,11 +31,11 @@ def loadPage(url):
 def scrapeNames(meet_url):
     html = loadPage(meet_url)
     soup = BeautifulSoup(html, "html.parser")
-
+    
     Athletes = []
-
+    print(html[:1000])
     tables = soup.find_all("table", class_="tablesaw tablesaw-xc table-striped table-bordered table-hover tablesaw-columntoggle")
-
+    
     for table in tables:
         header = table.find_previous("div", class_="custom-table-title custom-table-title-xc")
         if not header:
